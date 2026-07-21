@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { BookOpen, Calendar as CalendarIcon, List, BarChart2, Check, RotateCcw, Plus, Upload } from 'lucide-react';
+import { BookOpen, Calendar as CalendarIcon, List, BarChart2, Check, RotateCcw, Upload, Trash2 } from 'lucide-react';
 
 // --- COMPONENTES PRINCIPAIS --- //
 export default function App() {
@@ -63,6 +63,26 @@ export default function App() {
     setShowCompletedSet(false);
   };
 
+  // Apagar o histórico e reiniciar todo o progresso, preservando a sequência
+  const handleResetHistory = () => {
+    const confirmed = window.confirm(
+      'Tem certeza que deseja apagar todo o histórico e reiniciar o progresso? A sequência de leituras será mantida.'
+    );
+
+    if (!confirmed) return;
+
+    setPlan(prevPlan => prevPlan.map(set => ({
+      ...set,
+      blocks: set.blocks.map(block => ({
+        ...block,
+        isCompleted: false,
+        completedAt: null
+      }))
+    })));
+    setShowCompletedSet(false);
+    alert('Histórico apagado e progresso reiniciado.');
+  };
+
   // Importar plano colado
   const handlePastePlan = (text) => {
     if (!text.trim()) return;
@@ -113,7 +133,7 @@ export default function App() {
             planEmpty={plan.length === 0}
           />
         )}
-        {activeTab === 'calendario' && <CalendarioView plan={plan} />}
+        {activeTab === 'calendario' && <CalendarioView plan={plan} handleResetHistory={handleResetHistory} />}
         {activeTab === 'plano' && <PlanoView plan={plan} handlePastePlan={handlePastePlan} />}
         {activeTab === 'progresso' && <ProgressoView plan={plan} />}
       </main>
@@ -185,7 +205,7 @@ function HojeView({ currentSet, toggleBlock, showCompletedSet, handleContinueRea
   );
 }
 
-function CalendarioView({ plan }) {
+function CalendarioView({ plan, handleResetHistory }) {
   // Extrair histórico real
   const history = useMemo(() => {
     const dates = {};
@@ -207,8 +227,21 @@ function CalendarioView({ plan }) {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <h2 className="text-lg font-medium text-purple-800">Histórico de Leituras</h2>
-      <p className="text-sm text-gray-500 mb-6">Seu plano avança no seu ritmo. Aqui estão os dias em que você efetivamente registrou progressos.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-medium text-purple-800">Histórico de Leituras</h2>
+          <p className="text-sm text-gray-500 mt-2">Seu plano avança no seu ritmo. Aqui estão os dias em que você efetivamente registrou progressos.</p>
+        </div>
+        <button
+          onClick={handleResetHistory}
+          disabled={history.length === 0}
+          className="shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl border border-red-100 text-red-500 text-xs font-medium hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Apaga o histórico e reinicia o progresso"
+        >
+          <Trash2 size={16} />
+          <span className="hidden sm:inline">Apagar histórico</span>
+        </button>
+      </div>
       
       {history.length === 0 ? (
         <p className="text-center text-purple-300 py-10">Nenhuma leitura registrada ainda. Tudo tem um começo!</p>
@@ -251,6 +284,35 @@ function PlanoView({ plan, handlePastePlan }) {
         <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
           <div className="h-full bg-purple-400 rounded-full" style={{ width: `${percentage}%` }}></div>
         </div>
+      </section>
+
+      <section className="bg-white p-6 rounded-3xl shadow-sm border border-purple-50">
+        <h2 className="text-lg font-medium text-purple-800 mb-4">Sequência salva</h2>
+        {plan.length === 0 ? (
+          <p className="text-sm text-purple-300">Nenhuma sequência cadastrada ainda.</p>
+        ) : (
+          <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
+            {plan.map((set, setIndex) => (
+              <div key={set.id} className="rounded-2xl border border-purple-100 bg-purple-50/40 p-4">
+                <h3 className="text-xs font-bold text-purple-500 uppercase tracking-wider mb-3">
+                  Conjunto {setIndex + 1}
+                </h3>
+                <div className="space-y-2">
+                  {set.blocks.map((block, blockIndex) => (
+                    <div key={block.id} className="flex items-center gap-3 bg-white rounded-xl p-3 text-sm text-gray-700">
+                      <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs ${
+                        block.isCompleted ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-500'
+                      }`}>
+                        {block.isCompleted ? <Check size={14} /> : blockIndex + 1}
+                      </span>
+                      <span className={block.isCompleted ? 'line-through text-gray-400' : ''}>{block.title}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="bg-white p-6 rounded-3xl shadow-sm border border-purple-50">

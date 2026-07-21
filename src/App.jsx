@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { BookOpen, Calendar as CalendarIcon, List, BarChart2, Check, RotateCcw, Upload, Trash2 } from 'lucide-react';
+import { BookOpen, Calendar as CalendarIcon, List, BarChart2, Check, RotateCcw, Upload, Trash2, Pencil, Save, X } from 'lucide-react';
 
 // --- COMPONENTES PRINCIPAIS --- //
 export default function App() {
@@ -83,6 +83,40 @@ export default function App() {
     alert('Histórico apagado e progresso reiniciado.');
   };
 
+  // Editar os títulos dos blocos de um conjunto
+  const handleEditSet = (setId, titles) => {
+    const normalizedTitles = titles.map(title => title.trim());
+    if (normalizedTitles.some(title => !title)) {
+      alert('Preencha todas as leituras antes de salvar.');
+      return false;
+    }
+
+    setPlan(prevPlan => prevPlan.map(set =>
+      set.id === setId
+        ? {
+            ...set,
+            blocks: set.blocks.map((block, index) => ({
+              ...block,
+              title: normalizedTitles[index]
+            }))
+          }
+        : set
+    ));
+    return true;
+  };
+
+  // Apagar um conjunto e seu eventual histórico
+  const handleDeleteSet = (setId, setNumber) => {
+    const confirmed = window.confirm(
+      `Tem certeza que deseja apagar o Conjunto ${setNumber}? Essa ação também removerá o histórico de leituras desse conjunto.`
+    );
+
+    if (!confirmed) return;
+
+    setPlan(prevPlan => prevPlan.filter(set => set.id !== setId));
+    setShowCompletedSet(false);
+  };
+
   // Importar plano colado
   const handlePastePlan = (text) => {
     if (!text.trim()) return;
@@ -134,7 +168,14 @@ export default function App() {
           />
         )}
         {activeTab === 'calendario' && <CalendarioView plan={plan} handleResetHistory={handleResetHistory} />}
-        {activeTab === 'plano' && <PlanoView plan={plan} handlePastePlan={handlePastePlan} />}
+        {activeTab === 'plano' && (
+          <PlanoView
+            plan={plan}
+            handlePastePlan={handlePastePlan}
+            handleEditSet={handleEditSet}
+            handleDeleteSet={handleDeleteSet}
+          />
+        )}
         {activeTab === 'progresso' && <ProgressoView plan={plan} />}
       </main>
 
@@ -266,8 +307,32 @@ function CalendarioView({ plan, handleResetHistory }) {
   );
 }
 
-function PlanoView({ plan, handlePastePlan }) {
+function PlanoView({ plan, handlePastePlan, handleEditSet, handleDeleteSet }) {
   const [pasteText, setPasteText] = useState('');
+  const [editingSetId, setEditingSetId] = useState(null);
+  const [editingTitles, setEditingTitles] = useState([]);
+
+  const startEditing = (set) => {
+    setEditingSetId(set.id);
+    setEditingTitles(set.blocks.map(block => block.title));
+  };
+
+  const cancelEditing = () => {
+    setEditingSetId(null);
+    setEditingTitles([]);
+  };
+
+  const saveEditing = (setId) => {
+    if (handleEditSet(setId, editingTitles)) {
+      cancelEditing();
+    }
+  };
+
+  const updateEditingTitle = (index, value) => {
+    setEditingTitles(prev => prev.map((title, titleIndex) =>
+      titleIndex === index ? value : title
+    ));
+  };
   
   const totalBlocks = plan.reduce((acc, set) => acc + set.blocks.length, 0);
   const completedBlocks = plan.reduce((acc, set) => acc + set.blocks.filter(b => b.isCompleted).length, 0);
@@ -292,25 +357,80 @@ function PlanoView({ plan, handlePastePlan }) {
           <p className="text-sm text-purple-300">Nenhuma sequência cadastrada ainda.</p>
         ) : (
           <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
-            {plan.map((set, setIndex) => (
-              <div key={set.id} className="rounded-2xl border border-purple-100 bg-purple-50/40 p-4">
-                <h3 className="text-xs font-bold text-purple-500 uppercase tracking-wider mb-3">
-                  Conjunto {setIndex + 1}
-                </h3>
-                <div className="space-y-2">
-                  {set.blocks.map((block, blockIndex) => (
-                    <div key={block.id} className="flex items-center gap-3 bg-white rounded-xl p-3 text-sm text-gray-700">
-                      <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs ${
-                        block.isCompleted ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-500'
-                      }`}>
-                        {block.isCompleted ? <Check size={14} /> : blockIndex + 1}
-                      </span>
-                      <span className={block.isCompleted ? 'line-through text-gray-400' : ''}>{block.title}</span>
+            {plan.map((set, setIndex) => {
+              const isEditing = editingSetId === set.id;
+
+              return (
+                <div key={set.id} className="rounded-2xl border border-purple-100 bg-purple-50/40 p-4">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <h3 className="text-xs font-bold text-purple-500 uppercase tracking-wider">
+                      Conjunto {setIndex + 1}
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      {isEditing ? (
+                        <>
+                          <button
+                            onClick={() => saveEditing(set.id)}
+                            className="flex items-center gap-1 px-2.5 py-2 rounded-lg bg-purple-600 text-white text-xs font-medium hover:bg-purple-700 transition-colors"
+                            title="Salvar alterações"
+                          >
+                            <Save size={14} /> <span className="hidden sm:inline">Salvar</span>
+                          </button>
+                          <button
+                            onClick={cancelEditing}
+                            className="flex items-center gap-1 px-2.5 py-2 rounded-lg bg-white border border-purple-100 text-gray-500 text-xs font-medium hover:bg-purple-50 transition-colors"
+                            title="Cancelar edição"
+                          >
+                            <X size={14} /> <span className="hidden sm:inline">Cancelar</span>
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => startEditing(set)}
+                            disabled={editingSetId !== null}
+                            className="flex items-center gap-1 px-2.5 py-2 rounded-lg bg-white border border-purple-100 text-purple-600 text-xs font-medium hover:bg-purple-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Editar conjunto"
+                          >
+                            <Pencil size={14} /> <span className="hidden sm:inline">Editar</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSet(set.id, setIndex + 1)}
+                            disabled={editingSetId !== null}
+                            className="flex items-center gap-1 px-2.5 py-2 rounded-lg bg-white border border-red-100 text-red-500 text-xs font-medium hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Apagar conjunto"
+                          >
+                            <Trash2 size={14} /> <span className="hidden sm:inline">Apagar</span>
+                          </button>
+                        </>
+                      )}
                     </div>
-                  ))}
+                  </div>
+                  <div className="space-y-2">
+                    {set.blocks.map((block, blockIndex) => (
+                      <div key={block.id} className="flex items-center gap-3 bg-white rounded-xl p-3 text-sm text-gray-700">
+                        <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-xs ${
+                          block.isCompleted ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-500'
+                        }`}>
+                          {block.isCompleted ? <Check size={14} /> : blockIndex + 1}
+                        </span>
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editingTitles[blockIndex] ?? ''}
+                            onChange={(event) => updateEditingTitle(blockIndex, event.target.value)}
+                            className="w-full bg-purple-50 border border-purple-100 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-purple-200"
+                            aria-label={`Leitura ${blockIndex + 1} do conjunto ${setIndex + 1}`}
+                          />
+                        ) : (
+                          <span className={block.isCompleted ? 'line-through text-gray-400' : ''}>{block.title}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

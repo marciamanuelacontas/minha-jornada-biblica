@@ -1,38 +1,138 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { BookOpen, Calendar as CalendarIcon, List, BarChart2, Check, RotateCcw, Upload, Trash2, Pencil, Save, X } from 'lucide-react';
+import { BookOpen, Calendar as CalendarIcon, List, BarChart2, Check, RotateCcw, Upload, Trash2, Pencil, Save, X, Cloud, CloudOff, Loader2 } from 'lucide-react';
+import { supabase } from './lib/supabase';
 
 // --- COMPONENTES PRINCIPAIS --- //
 export default function App() {
   const [activeTab, setActiveTab] = useState('hoje');
   const [plan, setPlan] = useState([]);
   const [showCompletedSet, setShowCompletedSet] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('loading');
 
-  // Carregar dados iniciais
+  // Carregar o plano do Supabase e migrar a cópia local quando o banco estiver vazio
   useEffect(() => {
-    const savedPlan = localStorage.getItem('minhaJornadaBiblica_plan');
-    if (savedPlan) {
-      setPlan(JSON.parse(savedPlan));
-    } else {
-      // Dados fictícios iniciais para demonstração
-      setPlan([
-        {
-          id: 'set-1',
-          blocks: [
-            { id: 'b1', title: 'Gênesis 1–3', isCompleted: false, completedAt: null },
-            { id: 'b2', title: 'Salmos 1–2', isCompleted: false, completedAt: null },
-            { id: 'b3', title: 'Mateus 1–2', isCompleted: false, completedAt: null }
-          ]
+    let cancelled = false;
+
+    const loadPlan = async () => {
+      let localPlan = null;
+
+      try {
+        const savedPlan = localStorage.getItem('minhaJornadaBiblica_plan');
+        localPlan = savedPlan ? JSON.parse(savedPlan) : null;
+      } catch {
+        localPlan = null;
+      }
+
+      const fallbackPlan = Array.isArray(localPlan) ? localPlan : [];
+
+      try {
+        const { data, error } = await supabase
+          .from('app_state')
+          .select('plan')
+          .eq('id', 1)
+          .single();
+
+        if (cancelled) return;
+
+        if (error) {
+          console.error('Não foi possível carregar o plano do Supabase:', error);
+          setPlan(fallbackPlan);
+          setSyncStatus('offline');
+        } else if (Array.isArray(data?.plan) && data.plan.length > 0) {
+          setPlan(data.plan);
+          localStorage.setItem('minhaJornadaBiblica_plan', JSON.stringify(data.plan));
+          setSyncStatus('saved');
+        } else if (fallbackPlan.length > 0) {
+          setPlan(fallbackPlan);
+
+          const { error: migrationError } = await supabase
+            .from('app_state')
+            .update({
+              plan: fallbackPlan,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', 1);
+
+          setSyncStatus(migrationError ? 'offline' : 'saved');
+        } else {
+          setPlan([]);
+          setSyncStatus('saved');
         }
-      ]);
-    }
+      } catch (error) {
+        if (cancelled) return;
+        console.error('Erro de conexão com o Supabase:', error);
+        setPlan(fallbackPlan);
+        setSyncStatus('offline');
+      } finally {
+        if (!cancelled) {
+          setIsInitialized(true);
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadPlan();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Salvar sempre que o plano mudar
+  // Guardar uma cópia local e sincronizar alterações com o Supabase
   useEffect(() => {
-    if (plan.length > 0) {
-      localStorage.setItem('minhaJornadaBiblica_plan', JSON.stringify(plan));
-    }
-  }, [plan]);
+    if (!isInitialized) return undefined;
+
+    localStorage.setItem('minhaJornadaBiblica_plan', JSON.stringify(plan));
+    setSyncStatus('saving');
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const { error } = await supabase
+          .from('app_state')
+          .update({
+            plan,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', 1);
+
+        if (error) {
+          console.error('Não foi possível salvar no Supabase:', error);
+          setSyncStatus('offline');
+          return;
+        }
+
+        setSyncStatus('saved');
+      } catch (error) {
+        console.error('Erro ao salvar no Supabase:', error);
+        setSyncStatus('offline');
+      }
+    }, 500);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [plan, isInitialized]);
+
+  // Tentar novamente quando a conexão com a internet voltar
+  useEffect(() => {
+    const syncWhenOnline = async () => {
+      if (!isInitialized) return;
+
+      setSyncStatus('saving');
+      const { error } = await supabase
+        .from('app_state')
+        .update({
+          plan,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', 1);
+
+      setSyncStatus(error ? 'offline' : 'saved');
+    };
+
+    window.addEventListener('online', syncWhenOnline);
+    return () => window.removeEventListener('online', syncWhenOnline);
+  }, [plan, isInitialized]);
 
   // Lógica Principal: Encontrar o conjunto atual (primeiro não concluído totalmente)
   const currentSetIndex = plan.findIndex(set => set.blocks.some(b => !b.isCompleted));
@@ -137,6 +237,15 @@ export default function App() {
     alert(`${newSets.length} conjuntos importados com sucesso!`);
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#faf5ff] flex flex-col items-center justify-center gap-4 text-purple-700">
+        <Loader2 size={36} className="animate-spin" />
+        <p className="text-sm font-medium">Carregando sua jornada...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#faf5ff] text-gray-800 font-sans pb-20 md:pb-0 md:flex">
       
@@ -156,6 +265,7 @@ export default function App() {
         <header className="mb-8 text-center md:text-left mt-4 md:mt-0">
           <h1 className="text-2xl font-semibold text-purple-900 tracking-tight">Minha Jornada Bíblica</h1>
           <p className="text-purple-400 text-sm mt-1">Semeando a palavra, um dia de cada vez.</p>
+          <SyncStatus status={syncStatus} />
         </header>
 
         {activeTab === 'hoje' && (
@@ -503,6 +613,24 @@ function ProgressoView({ plan }) {
 }
 
 // --- UTILITÁRIOS DE UI --- //
+const SyncStatus = ({ status }) => {
+  const config = {
+    loading: { label: 'Carregando...', icon: <Loader2 size={13} className="animate-spin" />, className: 'text-purple-400' },
+    saving: { label: 'Salvando...', icon: <Loader2 size={13} className="animate-spin" />, className: 'text-purple-500' },
+    saved: { label: 'Dados salvos', icon: <Cloud size={13} />, className: 'text-green-600' },
+    offline: { label: 'Sem sincronização — cópia local preservada', icon: <CloudOff size={13} />, className: 'text-amber-600' }
+  };
+
+  const current = config[status] || config.loading;
+
+  return (
+    <div className={`mt-2 inline-flex items-center gap-1.5 text-xs ${current.className}`}>
+      {current.icon}
+      <span>{current.label}</span>
+    </div>
+  );
+};
+
 const NavItem = ({ active, icon, label, onClick }) => (
   <button onClick={onClick} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${active ? 'bg-purple-50 text-purple-700 font-semibold' : 'text-gray-500 hover:bg-gray-50'}`}>
     {icon} {label}

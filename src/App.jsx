@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { BookOpen, Calendar as CalendarIcon, List, BarChart2, Check, RotateCcw, Upload, Trash2, Pencil, Save, X, Cloud, CloudOff, Loader2 } from 'lucide-react';
+import { BookOpen, Calendar as CalendarIcon, List, BarChart2, Check, RotateCcw, Upload, Trash2, Pencil, Save, X, Cloud, CloudOff, Loader2, Copy } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 // --- COMPONENTES PRINCIPAIS --- //
@@ -303,12 +303,41 @@ export default function App() {
 // --- TELAS (VIEWS) --- //
 
 function HojeView({ currentSet, toggleBlock, showCompletedSet, handleContinueReading, planEmpty }) {
+  const [promptCopied, setPromptCopied] = useState(false);
+
+  useEffect(() => {
+    setPromptCopied(false);
+  }, [currentSet?.id]);
+
   if (planEmpty) return <div className="text-center p-10 bg-white rounded-3xl shadow-sm border border-purple-50 text-purple-600">Seu plano está vazio. Vá em "Meu Plano" para começar.</div>;
   if (!currentSet && !showCompletedSet) return <div className="text-center p-10 bg-white rounded-3xl shadow-sm border border-purple-50 text-purple-600">Você concluiu todo o seu plano! 🎉</div>;
 
   const completedCount = currentSet.blocks.filter(b => b.isCompleted).length;
   const totalCount = currentSet.blocks.length;
   const progress = (completedCount / totalCount) * 100;
+  const readingTitles = currentSet.blocks.map(block => block.title.trim()).filter(Boolean);
+  const formattedReadings = readingTitles.length > 1
+    ? `${readingTitles.slice(0, -1).join(', ')} e ${readingTitles.at(-1)}`
+    : readingTitles[0] || '';
+  const devotionalPrompt = `Faça um resumo dos capítulos: ${formattedReadings}; depois, faça um devocional baseado nesses capítulos.`;
+
+  const handleCopyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(devotionalPrompt);
+    } catch {
+      const temporaryTextArea = document.createElement('textarea');
+      temporaryTextArea.value = devotionalPrompt;
+      temporaryTextArea.style.position = 'fixed';
+      temporaryTextArea.style.opacity = '0';
+      document.body.appendChild(temporaryTextArea);
+      temporaryTextArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(temporaryTextArea);
+    }
+
+    setPromptCopied(true);
+    window.setTimeout(() => setPromptCopied(false), 2000);
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -342,6 +371,36 @@ function HojeView({ currentSet, toggleBlock, showCompletedSet, handleContinueRea
           </div>
         ))}
       </div>
+
+      <section className="bg-white p-5 rounded-2xl shadow-sm border border-purple-100">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-sm font-semibold text-purple-800">Prompt para o ChatGPT</h3>
+            <p className="text-xs text-gray-400 mt-1">Copie e cole no ChatGPT para estudar as leituras atuais.</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleCopyPrompt}
+            className={`shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-colors ${
+              promptCopied
+                ? 'bg-green-50 text-green-600 border border-green-100'
+                : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+            }`}
+            aria-label="Copiar prompt para o ChatGPT"
+          >
+            {promptCopied ? <Check size={16} /> : <Copy size={16} />}
+            {promptCopied ? 'Copiado!' : 'Copiar'}
+          </button>
+        </div>
+        <textarea
+          readOnly
+          value={devotionalPrompt}
+          rows="4"
+          onFocus={event => event.target.select()}
+          className="w-full resize-none rounded-xl bg-purple-50/60 border border-purple-100 p-4 text-sm text-gray-700 leading-relaxed outline-none focus:ring-2 focus:ring-purple-200"
+          aria-label="Texto para copiar e usar no ChatGPT"
+        />
+      </section>
 
       {showCompletedSet && completedCount === totalCount && (
         <div className="mt-8 p-6 bg-gradient-to-br from-purple-400 to-purple-500 rounded-3xl text-white text-center shadow-lg animate-bounce-subtle">
